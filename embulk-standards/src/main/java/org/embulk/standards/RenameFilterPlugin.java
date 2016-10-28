@@ -11,7 +11,12 @@ import org.embulk.spi.FilterPlugin;
 import org.embulk.spi.PageOutput;
 import org.embulk.spi.Schema;
 
+import com.google.common.base.CaseFormat;
+import com.google.common.base.Optional;
+import com.google.common.collect.ImmutableMap;
+
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 
@@ -82,12 +87,49 @@ public class RenameFilterPlugin
         String getRule();
     }
 
+    private interface SegmentRule extends Rule {
+        @Config("detect_upper_case_acronyms")
+        @ConfigDefault("false")
+        boolean getDetectUpperCaseAcronyms();
+    }
+
     private Schema applyRule(ConfigSource ruleConfig, Schema inputSchema) throws ConfigException
     {
         Rule rule = ruleConfig.loadConfig(Rule.class);
         switch (rule.getRule()) {
+        case "segment":
+            return applySegmentRule(inputSchema, ruleConfig.loadConfig(SegmentRule.class));
         default:
             throw new ConfigException("Renaming rule \"" +rule+ "\" is unknown");
         }
+    }
+
+    private Schema applySegmentRule(Schema inputSchema, SegmentRule rule) {
+        final boolean detectUpperCaseAcronyms = rule.getDetectUpperCaseAcronyms();
+        Schema.Builder builder = Schema.builder();
+        for (Column column : inputSchema.getColumns()) {
+            String from = column.getName();
+
+            if (detectUpperCaseAcronyms) {
+                StringBuilder fromBuilder = new StringBuilder(from);
+                int upperStarts = -1;
+                for (int i = 0; i < fromBuilder.length(); ++i) {
+                    char c = fromBuilder.charAt(i);
+                    if (Character.isUpperCase(c) && upperStarts < 0) {
+                        upperStarts = i;
+                    }
+                    if (!Character.isUpperCase(c) && upperStarts >= 0) {
+                        fromBuilder.replace(upperStarts, i-1,
+                                            fromBuilder.substring(upperStarts+1, i-1).toLowerCase(Locale.ENGLISH));
+                        upperStarts = -1;
+                    }
+                }
+                from = fromBuilder.toString();
+            }
+
+            //builder.add(CaseFormat.LOWER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, from), column.getType());
+            builder.add(from, column.getType());
+        }
+        return builder.build();
     }
 }

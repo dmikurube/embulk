@@ -16,6 +16,8 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 
+import java.util.HashMap;
+
 import static org.embulk.spi.type.Types.STRING;
 import static org.embulk.spi.type.Types.TIMESTAMP;
 import static org.junit.Assert.assertEquals;
@@ -136,5 +138,63 @@ public class TestRenameFilterPlugin
         } catch (Throwable t) {
             assertTrue(t instanceof ConfigException);
         }
+    }
+
+    @Test
+    public void checkSegmentRule1()
+    {
+        final String original[] = { "CamelCase",  "camelCase",  "all", "UPSCase"    };
+        final String expected[] = { "camel_case", "camel_case", "all", "u_p_s_case" };
+        checkSegmentRuleInternal(original, expected, false);
+    }
+
+    @Test
+    public void checkSegmentRule2()
+    {
+        final String original[] = { "ProductUPCBarcode",   "ABCDEF", "ProductBarcode"  };
+        final String expected[] = { "product_upc_barcode", "abcdef", "product_barcode" };
+        checkSegmentRuleInternal(original, expected, true);
+    }
+
+    private void checkSegmentRuleInternal(
+            final String original[],
+            final String expected[],
+            final boolean detectUpperCaseAcronyms)
+    {
+        HashMap<String, Object> parameters = new HashMap<>();
+        parameters.put("rule", "segment");
+        parameters.put("detect_upper_case_acronyms", detectUpperCaseAcronyms);
+        ConfigSource config = Exec.newConfigSource().set("rules",
+                ImmutableList.of(ImmutableMap.copyOf(parameters)));
+
+        renameAndCheckSchema(config, original, expected);
+    }
+
+    private Schema makeSchema(final String columnNames[])
+    {
+        Schema.Builder builder = new Schema.Builder();
+        for (String columnName : columnNames) {
+            builder.add(columnName, STRING);
+        }
+        return builder.build();
+    }
+
+    private void renameAndCheckSchema(ConfigSource config,
+                                      final String original[],
+                                      final String expected[])
+    {
+        final Schema originalSchema = makeSchema(original);
+        filter.transaction(config, originalSchema, new FilterPlugin.Control() {
+            @Override
+            public void run(TaskSource task, Schema renamedSchema)
+            {
+                assertEquals(originalSchema.getColumnCount(), renamedSchema.getColumnCount());
+                assertEquals(expected.length, renamedSchema.getColumnCount());
+                for (int i = 0; i < renamedSchema.getColumnCount(); ++i) {
+                    assertEquals(originalSchema.getColumnType(i), renamedSchema.getColumnType(i));
+                    assertEquals(expected[i], renamedSchema.getColumnName(i));
+                }
+            }
+        });
     }
 }
