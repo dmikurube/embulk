@@ -1,9 +1,14 @@
 package org.embulk;
 
+import java.io.InputStream;
 import java.io.IOException;
 import java.net.URL;
+import java.net.URLConnection;
 import java.security.CodeSource;
 import java.security.ProtectionDomain;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Enumeration;
 import java.util.jar.Attributes;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
@@ -89,6 +94,51 @@ public final class EmbulkVersion
             ex.printStackTrace();
             return null;
         }
+    }
+
+    private static Manifest findEmbulkManifestFromAllResources()
+    {
+        final ClassLoader classLoader = EmbulkVersion.class.getClassLoader();
+        final Collection<URL> manifestUrls;
+        try {
+            if (classLoader == null) {
+                return null;
+            }
+            manifestUrls = Collections.list(classLoader.getResources(JarFile.MANIFEST_NAME));
+        }
+        catch (IOException ex) {
+            System.err.println("Embulk version unavailable due to manifests unavailable.");
+            ex.printStackTrace();
+            return null;
+        }
+        catch (Exception ex) {
+            System.err.println("Embulk version unavailable due to an unknown exception.");
+            ex.printStackTrace();
+            return null;
+        }
+
+        for (final URL manifestUrl : manifestUrls) {
+            final URLConnection urlConnection;
+            try {
+                urlConnection = manifestUrl.openConnection();
+            }
+            catch (IOException ex) {
+                continue;
+            }
+
+            try (final InputStream inputStream = urlConnection.getInputStream()) {
+                final Manifest manifest = new Manifest(inputStream);
+                final Attributes mainAttributes = manifest.getMainAttributes();
+                final String implementationTitle = mainAttributes.getValue(Attributes.Name.IMPLEMENTATION_TITLE);
+                if ("embulk-cli".equals(implementationTitle)) {
+                    return manifest;
+                }
+            }
+            catch (IOException ex) {
+                continue;
+            }
+        }
+        return null;
     }
 
     private static String getImplementationVersion(final Manifest manifest, final String defaultVersion)
