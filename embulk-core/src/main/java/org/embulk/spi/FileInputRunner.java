@@ -33,6 +33,10 @@ public class FileInputRunner
     {
         // TODO "type" needed?
 
+        @Config("unarchivers")
+        @ConfigDefault("[]")
+        public List<ConfigSource> getUnarchiverConfigs();
+
         @Config("decoders")
         @ConfigDefault("[]")
         public List<ConfigSource> getDecoderConfigs();
