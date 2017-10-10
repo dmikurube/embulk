@@ -8,6 +8,7 @@ import java.util.ArrayDeque;
 import org.embulk.spi.DataException;
 import org.embulk.spi.util.LineDecoder;
 import org.embulk.config.ConfigException;
+import org.embulk.standards.CsvParserPlugin.QuotesInQuotedFields;
 
 public class CsvTokenizer
 {
@@ -31,6 +32,7 @@ public class CsvTokenizer
     private final char escape;
     private final String newline;
     private final boolean trimIfNotQuoted;
+    private final QuotesInQuotedFields quotesInQuotedFields;
     private final long maxQuotedSizeLimit;
     private final String commentLineMarker;
     private final LineDecoder input;
@@ -62,6 +64,12 @@ public class CsvTokenizer
         escape = task.getEscapeChar().or(CsvParserPlugin.EscapeCharacter.noEscape()).getCharacter();
         newline = task.getNewline().getString();
         trimIfNotQuoted = task.getTrimIfNotQuoted();
+        quotesInQuotedFields = task.getQuotesInQuotedFields();
+        if (trimIfNotQuoted && quotesInQuotedFields != QuotesInQuotedFields.ACCEPT_ONLY_RFC4180_ESCAPED) {
+            // The combination makes some syntax very ambiguous such as:
+            //     val1,  \"\"val2\"\"  ,val3
+            throw new ConfigException("[quotes_in_quoted_fields != ACCEPT_ONLY_RFC4180_ESCAPED] is not allowed to specify with [trim_if_not_quoted = true]");
+        }
         maxQuotedSizeLimit = task.getMaxQuotedSizeLimit();
         commentLineMarker = task.getCommentLineMarker().orNull();
         nullStringOrNull = task.getNullString().orNull();
@@ -316,6 +324,12 @@ public class CsvTokenizer
                         if (isQuote(next)) { // escaped quote
                             quotedValue.append(line.substring(valueStartPos, linePos));
                             valueStartPos = ++linePos;
+                        } else if (quotesInQuotedFields == QuotesInQuotedFields.ACCEPT_STRAY_QUOTES_AS_IS_ASSUMING_NO_DELIMITERS_IN_FIELDS &&
+                            !(isDelimiter(next) || isEndOfLine(next))) {
+                            // deal quote characters in the middle of a quoted value as a regular character
+                            if ((linePos - valueStartPos) + quotedValue.length() > maxQuotedSizeLimit) {
+                                throw new QuotedSizeLimitExceededException("The size of the quoted value exceeds the limit size (" + maxQuotedSizeLimit + ")");
+                            }
                         } else {
                             quotedValue.append(line.substring(valueStartPos, linePos - 1));
                             columnState = ColumnState.AFTER_QUOTED_VALUE;
