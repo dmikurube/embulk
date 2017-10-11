@@ -139,8 +139,12 @@ class CsvGuessTest < ::Test::Unit::TestCase
       ]
       assert_equal expected, actual["parser"]["columns"]
     end
+  end
 
+  class TestComplex < self
     def test_complex_line
+      # It does not contain "unescaped" stray quotes.
+      # It should not be ACCEPT_STRAY_QUOTES_AS_IS_ASSUMING_NO_DELIMITERS_IN_FIELDS, then.
       actual = guess([
         %Q(this is useless header),
         %Q(and more),
@@ -149,13 +153,54 @@ class CsvGuessTest < ::Test::Unit::TestCase
         %Q(2),
         %Q(# 3, "this is commented out" ,"1",21150312000000Z),
       ])
-      expected = [
-        {"name" => "num", "type" => "long"},
-        {"name" => "str", "type" => "string"},
-        {"name" => "quoted_num", "type" => "long"},
-        {"name" => "time", "type" => "timestamp", "format"=>"%Y%m%d%H%M%S%z"},
-      ]
-      assert_equal expected, actual["parser"]["columns"]
+      expected = {
+        "type" => "csv",
+        "delimiter" => ",",
+        "quote" => "\"",
+        "escape" => "\"",
+        "comment_line_marker" => "#",
+        "trim_if_not_quoted" => true,
+        "skip_header_lines" => 3,
+        "allow_extra_columns" => false,
+        "allow_optional_columns" => false,
+        "columns" => [
+          {"name" => "num", "type" => "long"},
+          {"name" => "str", "type" => "string"},
+          {"name" => "quoted_num", "type" => "long"},
+          {"name" => "time", "type" => "timestamp", "format" => "%Y%m%d%H%M%S%z"}
+        ]
+      }
+      assert_equal expected, actual["parser"]
+    end
+
+    def test_complex_line_with_stray_quotes
+      actual = guess([
+        %Q(this is useless header),
+        %Q(and more),
+        %Q(num,str,quoted_num,time),
+        %Q(1,"value with space " and quote in it","123",21150312000000Z),
+        %Q(2),
+        %Q(#3,"this is commented out","1",21150312000000Z),
+      ])
+      expected = {
+        "type" => "csv",
+        "delimiter" => ",",
+        "quote" => "\"",
+        "escape" => "\"",
+        "comment_line_marker" => "#",
+        "trim_if_not_quoted" => false,
+        "quotes_in_quoted_fields" => "ACCEPT_STRAY_QUOTES_AS_IS_ASSUMING_NO_DELIMITERS_IN_FIELDS",
+        "skip_header_lines" => 3,
+        "allow_extra_columns" => false,
+        "allow_optional_columns" => false,
+        "columns" => [
+          {"name" => "num", "type" => "long"},
+          {"name" => "str", "type" => "string"},
+          {"name" => "quoted_num", "type" => "long"},
+          {"name" => "time", "type" => "timestamp", "format" => "%Y%m%d%H%M%S%z"}
+        ]
+      }
+      assert_equal expected, actual["parser"]
     end
   end
 

@@ -85,6 +85,15 @@ module Embulk
           # don't even set null_string to avoid confusion of null and 'null' in YAML format
         end
 
+        unless parser_guessed.has_key?("quotes_in_quoted_fields")
+          quotes_in_quoted_fields = guess_quotes_in_quoted_fields(sample_lines, delim, parser_guessed["quote"])
+          if quotes_in_quoted_fields
+            parser_guessed["quotes_in_quoted_fields"] = quotes_in_quoted_fields
+            # trim_if_not_quoted must not be specified with ACCEPT_STRAY_QUOTES_AS_IS_ASSUMING_NO_DELIMITERS_IN_FIELDS
+            parser_guessed["trim_if_not_quoted"] = false
+          end
+        end
+
         # guessing skip_header_lines should be before guessing guess_comment_line_marker
         # because lines supplied to CsvTokenizer already don't include skipped header lines.
         # skipping empty lines is also disabled here because skipping header lines is done by
@@ -144,6 +153,12 @@ module Embulk
 
           header_line = (first_types != other_types && first_types.all? {|t| ["string", "boolean"].include?(t) }) || guess_string_header_line(sample_records)
           column_types = other_types
+        end
+
+        unless parser_guessed["trim_if_not_quoted"]
+          # trim_if_not_quoted must not be specified with ACCEPT_STRAY_QUOTES_AS_IS_ASSUMING_NO_DELIMITERS_IN_FIELDS
+          quotes_in_quoted_fields = guess_quotes_in_quoted_fields(sample_lines, delim, parser_guessed["quote"])
+          parser_guessed["quotes_in_quoted_fields"] = quotes_in_quoted_fields if quotes_in_quoted_fields
         end
 
         if column_types.empty?
@@ -303,6 +318,14 @@ module Embulk
         return found_str ? found_str : nil
       end
 
+      def guess_quotes_in_quoted_fields(sample_lines, delim, quote)
+        if sample_lines.any? { |line| has_stray_quotes(line, delim, quote) }
+          return "ACCEPT_STRAY_QUOTES_AS_IS_ASSUMING_NO_DELIMITERS_IN_FIELDS"
+        else
+          return nil  # Default: "ACCEPT_ONLY_RFC4180_ESCAPED"
+        end
+      end
+
       def guess_skip_header_lines(sample_records)
         counts = sample_records.map {|records| records.size }
         (1..[MAX_SKIP_LINES, counts.length - 1].min).each do |i|
@@ -367,6 +390,24 @@ module Embulk
 
       def array_standard_deviation(array)
         Math.sqrt(array_variance(array))
+      end
+
+      def has_stray_quotes(line, delim, quote, trimmable_space=' ')
+        # If any trimmable space character is found around a delimiter, the line is considered as non-stray quotes.
+        # It is because trim_if_not_quoted confuses the initial trial tokenizing with trying to salvage stray quotes.
+        line.scan(/.#{Regexp.quote(delim)}./).each do |triplet|
+          if triplet[0] == trimmable_space || triplet[2] == trimmable_space
+            return false
+          end
+        end
+
+        line_with_escaped_quotes_removed = line.gsub(/#{Regexp.quote(quote)}#{Regexp.quote(quote)}/, '')
+        line_with_escaped_quotes_removed.scan(/.#{Regexp.quote(quote)}./).each do |triplet|
+          if triplet[0] != delim && triplet[2] != delim
+            return true
+          end
+        end
+        return false
       end
     end
 
