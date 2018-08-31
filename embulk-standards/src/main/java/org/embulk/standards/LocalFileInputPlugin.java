@@ -2,6 +2,7 @@ package org.embulk.standards;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.FileVisitOption;
@@ -274,4 +275,49 @@ public class LocalFileInputPlugin implements FileInputPlugin {
             });
         return builder;
     }
+
+    private static Path getCaseSensitivePathOfDirectory(
+            final Path dirNormalized,
+            final Set<FileVisitOption> visitOptions)
+            throws IOException {
+        Path built = Paths.get("");
+        for (final Path pathElement : dirNormalized) {
+            if (pathElement.equals(PARENT)) {
+                built = built.resolve(PARENT);
+                continue;
+            }
+
+            final String pathElementString = pathElement.toString();
+
+            final ArrayList<Path> matchedCaseInsensitive = new ArrayList<>();
+            Files.walkFileTree(built, visitOptions, 1, new SimpleFileVisitor<Path>() {
+                    @Override
+                    public FileVisitResult preVisitDirectory(final Path dir, final BasicFileAttributes attrs) {
+                        if (pathElementString.equalsIgnoreCase(dir.getFileName().toString())) {
+                            /*
+                            if (dir.toFile().getCanonicalPath().equals(
+                                    built.resolve(pathElement).toFile().getCanonicalPath())) {
+                                // If |dir| points the same file with |built.resolve(pathElement)|.
+                            */
+                                matchedCaseInsensitive.add(dir);
+                            /*
+                            }
+                            */
+                        }
+                        return FileVisitResult.SKIP_SUBTREE;
+                    }
+                });
+            if (matchedCaseInsensitive.size() == 1) {
+                built = matchedCaseInsensitive.get(0);
+            } else if (matchedCaseInsensitive.size() > 1) {
+                // If multiple paths are found, it means that the file system is case sensitive.
+                built = built.resolve(pathElement);
+            } else {
+                throw new FileNotFoundException("Directory not found: " + built.resolve(pathElement).toString());
+            }
+        }
+        return built;
+    }
+
+    private static final Path PARENT = Paths.get("..");
 }
