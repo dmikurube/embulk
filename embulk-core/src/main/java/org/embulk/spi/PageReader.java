@@ -1,7 +1,7 @@
 package org.embulk.spi;
 
-import io.airlift.slice.Slice;
-import io.airlift.slice.Slices;
+import org.embulk.deps.airlift.Slice;
+import org.embulk.deps.airlift.Slices;
 import org.embulk.spi.time.Timestamp;
 import org.msgpack.value.Value;
 
@@ -19,6 +19,10 @@ public class PageReader implements AutoCloseable {
 
     private static final Page SENTINEL = Page.wrap(Buffer.wrap(new byte[4]));  // buffer().release() does nothing
 
+    static {
+        Slices.setClassLoader(PageReader.class.getClassLoader());
+    }
+
     public PageReader(Schema schema) {
         this.schema = schema;
         this.columnOffsets = PageFormat.columnOffsets(schema);
@@ -27,7 +31,7 @@ public class PageReader implements AutoCloseable {
 
     public static int getRecordCount(Page page) {
         Buffer pageBuffer = page.buffer();
-        Slice pageSlice = Slices.wrappedBuffer(pageBuffer.array(), pageBuffer.offset(), pageBuffer.limit());
+        final Slice pageSlice = Slices.get().wrappedBuffer(pageBuffer.array(), pageBuffer.offset(), pageBuffer.limit());
         return pageSlice.getInt(0);  // see page format
     }
 
@@ -36,7 +40,7 @@ public class PageReader implements AutoCloseable {
         this.page = SENTINEL;
 
         Buffer pageBuffer = page.buffer();
-        Slice pageSlice = Slices.wrappedBuffer(pageBuffer.array(), pageBuffer.offset(), pageBuffer.limit());
+        final Slice pageSlice = Slices.get().wrappedBuffer(pageBuffer.array(), pageBuffer.offset(), pageBuffer.limit());
 
         pageRecordCount = pageSlice.getInt(0);  // see page format
         readCount = 0;
