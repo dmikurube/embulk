@@ -17,14 +17,26 @@ import static org.msgpack.value.ValueFactory.newString;
 import java.util.ArrayList;
 import java.util.List;
 import org.embulk.EmbulkTestRuntime;
+import org.embulk.deps.airlift.MockSlice;
+import org.embulk.deps.airlift.MockSlices;
+import org.embulk.deps.airlift.Slices;
 import org.embulk.spi.time.Timestamp;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.runner.RunWith;
 import org.msgpack.value.ImmutableMapValue;
 import org.msgpack.value.Value;
+import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
+import org.powermock.api.mockito.PowerMockito;
+import org.powermock.core.classloader.annotations.PrepareForTest;
+import org.powermock.modules.junit4.PowerMockRunner;
 
+@RunWith(PowerMockRunner.class)
+@PrepareForTest({Slices.class})
 public class TestPageBuilderReader {
     @Rule
     public EmbulkTestRuntime runtime = new EmbulkTestRuntime();
@@ -71,6 +83,10 @@ public class TestPageBuilderReader {
 
     @Test
     public void testBoolean() {
+        PowerMockito.mockStatic(Slices.class);
+        // TODO: airlift-slice should be in testCompile in build.gradle even after airlift-slice is removed from compile.
+        Mockito.when(Slices.get()).thenReturn(new MockSlices());
+
         check(Schema.builder().add("col1", BOOLEAN).build(),
                 false, true, true);
     }
