@@ -5,6 +5,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.FileSystem;
@@ -18,25 +19,19 @@ import java.util.jar.Manifest;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.apache.maven.artifact.versioning.ComparableVersion;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-// It uses |java.net.HttpURLConnection| so that the CLI classes do not need additional dependedcies.
-// TODO(dmikurube): Support HTTP proxy. The original Ruby version did not support as well, though.
+/**
+ * Operates Embulk's selfupdate subcommand.
+ *
+ * <p>It uses {@code java.net.HttpURLConnection} so that the CLI classes do not need additional dependedcies.
+ */
 public class EmbulkSelfUpdate {
-    // TODO(dmikurube): Stop catching Exceptions here when embulk_run.rb is replaced to Java.
+    // TODO(dmikurube): Support HTTP proxy. The original Ruby version did not support as well, though.
     public void updateSelf(final String runningVersionString,
                            final String specifiedVersionString,
                            final boolean isForced) throws IOException, URISyntaxException {
-        try {
-            updateSelfWithExceptions(runningVersionString, specifiedVersionString, isForced);
-        } catch (Throwable ex) {
-            ex.printStackTrace();
-            throw ex;
-        }
-    }
-
-    private void updateSelfWithExceptions(final String runningVersionString,
-                                          final String specifiedVersionString,
-                                          final boolean isForced) throws IOException, URISyntaxException {
         final Path jarPathJava = Paths.get(
                 EmbulkSelfUpdate.class.getProtectionDomain().getCodeSource().getLocation().toURI());
 
@@ -46,7 +41,8 @@ public class EmbulkSelfUpdate {
 
         final String targetVersionString;
         if (specifiedVersionString != null) {
-            System.out.printf("Checking version %s...\n", specifiedVersionString);
+            logger.info(String.format("Checking version %s...", specifiedVersionString));
+            final URL directDownloadUrl = reachTargetVersion(specifiedVersionString, runningVersionString, 5);
             targetVersionString = checkTargetVersion(specifiedVersionString);
             if (targetVersionString == null) {
                 throw new RuntimeException(String.format("Specified version does not exist: %s", specifiedVersionString));
@@ -184,6 +180,66 @@ public class EmbulkSelfUpdate {
         }
     }
 
+    /**
+     * Gets the exact file URL of the version reachable from dl.embulk.org.
+     *
+     * It passes all {@code IOException} and {@code RuntimeException} through out.
+     */
+    private URL reachTargetVersion(
+            final String requiredVersion,
+            final String runningVersion,
+            final int maximumRedirects) throws IOException {
+        final String initialDownloadUrl = String.format("https://dl.embulk.org/embulk-%s.jar", requiredVersion);
+        logger.info("Starting accesses from: " + initialDownloadUrl);
+
+        URL currentUrl;
+        try {
+            currentUrl = new URL(initialDownloadUrl);
+        } catch (final MalformedURLException ex) {
+            throw new FileNotFoundException("Unexpectedly started from an invalid URL: " + initialDownloadUrl);
+        }
+
+        for (int i = 0; i < maximumRedirects; ++i) {
+            final HttpURLConnection connection = (HttpURLConnection) currentUrl.openConnection();
+            try {
+                connection.setInstanceFollowRedirects(false);
+                connection.setRequestMethod("HEAD");
+                connection.setRequestProperty("Accept", "*/*");
+
+                // Cloudflare requires User-Agent.
+                connection.setRequestProperty("User-Agent", "Embulk/" + runningVersion);
+
+                connection.connect();
+                final int statusCode = connection.getResponseCode();
+                if (HttpURLConnection.HTTP_MOVED_TEMP == statusCode || HttpURLConnection.HTTP_MOVED_TEMP == statusCode) {
+                    final String location = connection.getHeaderField("Location");
+                    if (location == null) {
+                        throw new FileNotFoundException("No Location header for HTTP status: " + statusCode);
+                    }
+                    logger.info("Redirected to: " + location);
+                    try {
+                        currentUrl = new URL(location);
+                    } catch (final MalformedURLException ex) {
+                        throw new FileNotFoundException("Location header had an invalid URL: " + location);
+                    }
+                } else if (HttpURLConnection.HTTP_OK == statusCode) {
+                    logger.info("Reached to: " + currentUrl.toString());
+                    return currentUrl;
+                } else {
+                    try {
+                        logger.error("Response: " + statusCode + " " + connection.getResponseMessage());
+                    } catch (final IOException ex) {
+                        logger.error("Response: " + statusCode + " (Failed to retrieve the response message)", ex);
+                    }
+                    throw new FileNotFoundException("Unexpected HTTP status code: " + statusCode);
+                }
+            } finally {
+                connection.disconnect();
+            }
+        }
+        throw new FileNotFoundException("Too many redirects from " + initialDownloadUrl);
+    }
+
     private String getJarVersion(Path jarPath) throws IOException {
         try (final JarFile jarFile = new JarFile(jarPath.toFile())) {
             final Manifest manifest;
@@ -216,6 +272,7 @@ public class EmbulkSelfUpdate {
         // The jar manifest with "Implementation-Version" has been included in Embulk jars from v0.4.0.
     }
 
+    private static final Logger logger = LoggerFactory.getLogger(EmbulkSelfUpdate.class);
+
     private static final Pattern VERSION_URL_PATTERN = Pattern.compile("^https?://.*/embulk/(\\d+\\.\\d+[^\\/]+).*$");
-    private static final Pattern VERSION_RUBY_PATTERN = Pattern.compile("^\\s*VERSION\\s*\\=\\s*(\\p{Graph}+)\\s*$");
 }
