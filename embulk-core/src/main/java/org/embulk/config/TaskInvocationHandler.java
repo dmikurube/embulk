@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
-class TaskInvocationHandler implements InvocationHandler {
+final class TaskInvocationHandler implements InvocationHandler {
     private final ModelManager model;
     private final Class<?> iface;
     private final Map<String, Object> objects;
@@ -53,11 +53,11 @@ class TaskInvocationHandler implements InvocationHandler {
         return injectedFields;
     }
 
-    protected Object invokeGetter(Method method, String fieldName) {
+    private Object invokeGetter(Method method, String fieldName) {
         return objects.get(fieldName);
     }
 
-    protected void invokeSetter(Method method, String fieldName, Object value) {
+    private void invokeSetter(Method method, String fieldName, Object value) {
         if (value == null) {
             objects.remove(fieldName);
         } else {
@@ -73,26 +73,27 @@ class TaskInvocationHandler implements InvocationHandler {
         return data;
     }
 
-    protected TaskSource invokeDump() {
+    private TaskSource invokeDump() {
         return new DataSourceImpl(model, model.writeObjectAsObjectNode(getSerializableFields()));
     }
 
-    protected String invokeToString() {
+    private String invokeToString() {
         StringBuilder sb = new StringBuilder();
         sb.append(iface.getName());
         sb.append(getSerializableFields());
         return sb.toString();
     }
 
-    protected int invokeHashCode() {
+    private int invokeHashCode() {
         return objects.hashCode();
     }
 
-    protected boolean invokeEquals(Object other) {
+    private boolean invokeEquals(Object other) {
         return (other instanceof TaskInvocationHandler)
                 && objects.equals(((TaskInvocationHandler) other).objects);
     }
 
+    @Override
     public Object invoke(Object proxy, Method method, Object[] args) {
         String methodName = method.getName();
 
@@ -201,11 +202,11 @@ class TaskInvocationHandler implements InvocationHandler {
         return null;
     }
 
-    protected static boolean hasExpectedArgumentLength(Method method, int expected) {
+    private static boolean hasExpectedArgumentLength(Method method, int expected) {
         return method.getParameterTypes().length == expected;
     }
 
-    protected static void checkArgumentLength(Method method, int expected, String methodName) {
+    private static void checkArgumentLength(Method method, int expected, String methodName) {
         if (!hasExpectedArgumentLength(method, expected)) {
             throw new IllegalArgumentException(
                     String.format("Method '%s' expected %d argument but got %d arguments", methodName, expected, method.getParameterTypes().length));
