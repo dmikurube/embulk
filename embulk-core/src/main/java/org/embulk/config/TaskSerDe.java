@@ -80,7 +80,7 @@ class TaskSerDe {
             this.injects = injectEntries(iface);
         }
 
-        protected Multimap<String, FieldEntry> getterMappings(Class<?> iface) {
+        private Multimap<String, FieldEntry> getterMappings(Class<?> iface) {
             ImmutableMultimap.Builder<String, FieldEntry> builder = ImmutableMultimap.builder();
             for (Map.Entry<String, Method> getter : TaskInvocationHandler.fieldGetters(iface).entries()) {
                 Method getterMethod = getter.getValue();
@@ -104,7 +104,7 @@ class TaskSerDe {
             return builder.build();
         }
 
-        protected List<InjectEntry> injectEntries(Class<?> iface) {
+        private List<InjectEntry> injectEntries(Class<?> iface) {
             ImmutableList.Builder<InjectEntry> builder = ImmutableList.builder();
             for (Map.Entry<String, Method> getter : TaskInvocationHandler.fieldGetters(iface).entries()) {
                 Method getterMethod = getter.getValue();
